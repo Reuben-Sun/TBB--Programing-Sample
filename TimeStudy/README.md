@@ -1,4 +1,6 @@
-### 时间
+这是一个生成分型图片，并对其进行Gamma矫正和Tint着色的程序
+
+其中设计TBB的是时刻查询
 
 ```c++
 //t0时刻
@@ -8,3 +10,4 @@ tbb::tick_count t0 = tbb::tick_count::now();
 std::cout << "Time: " << (tbb::tick_count::now() - t0).seconds() << " seconds" << std::endl;
 ```
 
+![Image](Image.bmp)
