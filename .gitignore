@@ -1,10 +1,4 @@
 
 .DS_Store
 
-SIMD/.idea/
-
-FlowGraph/.idea/
-
-ParallelFor/.idea/
-
-TimeStudy/.idea/
+*/.idea/
