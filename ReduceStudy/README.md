@@ -4,3 +4,4 @@
 ![reduce](reduce.jpg)
 
 ![PI](PI.jpg)
+
