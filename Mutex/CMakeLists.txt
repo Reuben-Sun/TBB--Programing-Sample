@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(Mutex)
+find_package(TBB REQUIRED)
+set(CMAKE_CXX_STANDARD 17)
+add_executable(Mutex main.cpp)
+target_link_libraries(Mutex TBB::tbb)
