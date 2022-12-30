@@ -37,8 +37,7 @@ void serialBlockFS(std::vector<double> &x, const std::vector<double> &a, std::ve
 }
 
 //并行
-void parallelFS(std::vector<double> &x, const std::vector<double> &a,
-                std::vector<double> &b) {
+void parallelFS(std::vector<double> &x, const std::vector<double> &a, std::vector<double> &b) {
     const int N = x.size();
     const int block_size = 512;
     const int num_blocks = N / block_size;
@@ -86,6 +85,32 @@ void parallelFS(std::vector<double> &x, const std::vector<double> &a,
 }
 
 //独立图
+using Node = tbb::flow::continue_node<tbb::flow::continue_msg>;
+using NodePtr = std::shared_ptr<Node>;
+NodePtr createNode(tbb::flow::graph &g, int r, int c, int block_size,
+                   std::vector<double> &x, const std::vector<double> &a, std::vector<double> &b);
+void addEdges(std::vector<NodePtr> &nodes, int r, int c, int block_size, int num_blocks);
+void dependencyGraphFS(std::vector<double> &x, const std::vector<double> &a, std::vector<double> &b){
+    const int N = x.size();
+    const int block_size = 512;
+    const int num_blocks = N / block_size;
+
+    std::vector<NodePtr> nodes(num_blocks * num_blocks);
+    //创建图对象
+    tbb::flow::graph g;
+    for(int r = num_blocks-1; r >= 0; --r){
+        for(int c = r; c >= 0; --c){
+            //创建图节点
+            nodes[r * num_blocks + c] = createNode(g, r, c, block_size, x, a, b);
+            //链接
+            addEdges(nodes, r, c, block_size, num_blocks);
+        }
+    }
+    //传入消息
+    nodes[0]->try_put(tbb::flow::continue_msg());
+    //等待完成
+    g.wait_for_all();
+}
 
 
 //初始化
@@ -132,7 +157,8 @@ int main() {
         tbb::tick_count t0 = tbb::tick_count::now();
 //        serialFS(x,a,b);
 //        serialBlockFS(x, a, b);
-        parallelFS(x, a, b);
+//        parallelFS(x, a, b);
+        dependencyGraphFS(x, a, b);
         serial_time = (tbb::tick_count::now() - t0).seconds();
     }
     for (int i = 0; i < N; ++i) {
@@ -144,3 +170,34 @@ int main() {
     return 0;
 }
 
+NodePtr createNode(tbb::flow::graph &g, int r, int c, int block_size,
+                   std::vector<double> &x, const std::vector<double> &a, std::vector<double> &b){
+    const int N = x.size();
+    return std::make_shared<Node>(
+            g,
+            [r, c, block_size, N, &x, &a, &b](const tbb::flow::continue_msg & msg){
+                int i_start = r * block_size, i_end = i_start + block_size;
+                int j_start = c * block_size, j_max = j_start + block_size -1;
+                for(int i = i_start; i < i_end; ++i){
+                    int j_end = (i <= j_max) ? i : j_max+1;
+                    for(int j = j_start; j < j_end; ++j){
+                        b[i] -= a[j + i*N] * x[j];
+                    }
+                    if(j_end == i){
+                        x[i] = b[i] / a[i + i*N];
+                    }
+                }
+                return msg;
+            }
+        );
+}
+
+void addEdges(std::vector<NodePtr> &nodes, int r, int c, int block_size, int num_blocks){
+    NodePtr np = nodes[r * num_blocks + c];
+    if(c + 1 < num_blocks && r != c){
+        tbb::flow::make_edge(*np, *nodes[r * num_blocks + c + 1]);
+    }
+    if(r + 1 < num_blocks){
+        tbb::flow::make_edge(*np, *nodes[(r+1) * num_blocks + c]);
+    }
+}
