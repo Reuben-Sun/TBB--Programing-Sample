@@ -37,6 +37,30 @@ void parallelQuicksort(QV::iterator left, QV::iterator right){
 
 }
 
+void parallelCutoffQuicksort(QV::iterator left, QV::iterator right){
+    const int cutoff = 100;
+
+    if (right - left < cutoff) {
+        quickSort(right, left);
+    }
+    else {
+        int pivot_value =  *left;
+        QV::iterator i = left, j = right - 1;
+        while (i != j) {
+            while (i != j && pivot_value < *j) --j;
+            while (i != j && pivot_value >= *i) ++i;
+            std::iter_swap(i, j);
+        }
+        std::iter_swap(left, i);
+
+        // recursive call
+        tbb::parallel_invoke(
+                [=]() { parallelQuicksort(left, i); },
+                [=]() { parallelQuicksort(i + 1, right); }
+        );
+    }
+}
+
 int main() {
     std::vector<int> nums;
     for(int i = 0; i < 5000; ++i){
