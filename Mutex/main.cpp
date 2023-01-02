@@ -62,9 +62,72 @@ int main(int argc, char** argv) {
     t1 = tbb::tick_count::now();
     double a_parallel = (t1 - t0).seconds();
 
-    std::cout << "Serial:   "   << t_serial   << std::endl;
-    std::cout << "Parallel: " << t_parallel << std::endl;
-    std::cout << "Atomic    " << a_parallel << std::endl;
+    //ETS
+    using vector_t = std::vector<int>;
+    using priv_h_t = tbb::enumerable_thread_specific<vector_t>;
+    priv_h_t priv_h{num_bins};
+    t0 = tbb::tick_count::now();
+    parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+              [&](const tbb::blocked_range<size_t>& r)
+              {
+                priv_h_t::reference my_hist = priv_h.local();
+                for (size_t i = r.begin(); i < r.end(); ++i)
+                  my_hist[image[i]]++;
+              });
+    //Sequential reduction of the private histograms
+    vector_t hist_p3(num_bins);
+    /*
+    for(auto i=priv_h.begin(); i!=priv_h.end(); ++i){
+        for (int j=0; j<num_bins; ++j) hist_p3[j]+=(*i)[j];
+    }
+    */
+    /*
+    for (auto& i:priv_h) { // i traverses all private vectors
+    std::transform(hist_p3.begin(),    // source 1 begin
+                   hist_p3.end(),      // source 1 end
+                   i.begin(),         // source 2 begin
+                   hist_p3.begin(),    // destination begin
+                   std::plus<int>() );// binary operation
+    }
+    */
+    priv_h.combine_each([&](vector_t i){
+        std::transform(hist_p3.begin(),    // source 1 begin
+                   hist_p3.end(),      // source 1 end
+                   i.begin(),         // source 2 begin
+                   hist_p3.begin(),    // destination begin
+                   std::plus<int>() );// binary operation
+    });
+    t1 = tbb::tick_count::now();
+    double e_parallel = (t1 - t0).seconds();
+
+    //combinable
+    tbb::combinable<vector_t> priv_h2{[num_bins](){return vector_t(num_bins);}};
+    t0 = tbb::tick_count::now();
+    parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+                [&](const tbb::blocked_range<size_t>& r)
+                {
+                    vector_t& my_hist = priv_h2.local();
+                    for (size_t i = r.begin(); i < r.end(); ++i)
+                    my_hist[image[i]]++;
+                });
+    //Sequential reduction of the private histograms
+    vector_t hist_p4(num_bins);
+    priv_h2.combine_each([&](vector_t i)
+        { // for each priv histogram a
+        std::transform(hist_p4.begin(),     // source 1 begin
+                        hist_p4.end(),      // source 1 end
+                        i.begin(),          // source 2 begin
+                        hist_p4.begin(),    // destination begin
+                        std::plus<int>() ); // binary operation
+        });
+    t1 = tbb::tick_count::now();
+    double c_parallel = (t1 - t0).seconds();
+
+    std::cout << "Serial:       "   << t_serial   << std::endl;
+    std::cout << "Parallel:     " << t_parallel << std::endl;
+    std::cout << "Atomic:       " << a_parallel << std::endl;
+    std::cout << "ETC:          " << e_parallel << std::endl;
+    std::cout << "combinable:   " << c_parallel << std::endl;
     // std::cout << "Speed-up: " << t_serial/t_parallel << std::endl;
 
     if (hist != hist_p)
