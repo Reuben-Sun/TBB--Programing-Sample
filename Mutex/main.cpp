@@ -74,7 +74,6 @@ int main(int argc, char** argv) {
                 for (size_t i = r.begin(); i < r.end(); ++i)
                   my_hist[image[i]]++;
               });
-    //Sequential reduction of the private histograms
     vector_t hist_p3(num_bins);
     /*
     for(auto i=priv_h.begin(); i!=priv_h.end(); ++i){
@@ -110,7 +109,6 @@ int main(int argc, char** argv) {
                     for (size_t i = r.begin(); i < r.end(); ++i)
                     my_hist[image[i]]++;
                 });
-    //Sequential reduction of the private histograms
     vector_t hist_p4(num_bins);
     priv_h2.combine_each([&](vector_t i)
         { // for each priv histogram a
@@ -123,11 +121,36 @@ int main(int argc, char** argv) {
     t1 = tbb::tick_count::now();
     double c_parallel = (t1 - t0).seconds();
 
+    //parallel_reduce
+    using image_iterator = std::vector<uint8_t>::iterator;
+    t0 = tbb::tick_count::now();
+    vector_t hist_p5 = parallel_reduce (
+        /*range*/    tbb::blocked_range<image_iterator>{image.begin(), image.end()},
+        /*identity*/ vector_t(num_bins),
+        // 1st Lambda: Parallel computation on private histograms
+        [](const tbb::blocked_range<image_iterator>& r, vector_t v) {
+                std::for_each(r.begin(), r.end(),
+                    [&v](uint8_t i) {v[i]++;});
+                return v;
+            },
+        // 2nd Lambda: Parallel reduction of the private histograms
+        [](vector_t a, const vector_t& b) -> vector_t {
+            std::transform(a.begin(),         // source 1 begin
+                            a.end(),           // source 1 end
+                            b.begin(),         // source 2 begin
+                            a.begin(),         // destination begin
+                            std::plus<int>() );// binary operation
+                return a;
+            });
+    t1 = tbb::tick_count::now();
+    double r_parallel = (t1 - t0).seconds();
+
     std::cout << "Serial:       "   << t_serial   << std::endl;
     std::cout << "Parallel:     " << t_parallel << std::endl;
     std::cout << "Atomic:       " << a_parallel << std::endl;
     std::cout << "ETC:          " << e_parallel << std::endl;
     std::cout << "combinable:   " << c_parallel << std::endl;
+    std::cout << "reduce:       " << r_parallel << std::endl;
     // std::cout << "Speed-up: " << t_serial/t_parallel << std::endl;
 
     if (hist != hist_p)
