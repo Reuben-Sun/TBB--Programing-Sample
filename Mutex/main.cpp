@@ -1,6 +1,15 @@
 #include <iostream>
 #include <tbb/tbb.h>
 
+struct bin{
+    std::atomic<int> count; //4 bytes
+    uint8_t padding[64 - sizeof(count)];    //60 bytes
+};
+struct bin2{
+    //C++17后，可以用std::hardware_destructive_interference_size替代64
+    alignas(64) std::atomic<int> count;
+};
+
 int main(int argc, char** argv) {
 
     long int n = 100000000;
@@ -145,12 +154,45 @@ int main(int argc, char** argv) {
     t1 = tbb::tick_count::now();
     double r_parallel = (t1 - t0).seconds();
 
+    //cache padding
+    std::vector<bin, tbb::cache_aligned_allocator<bin>> hist_p6(num_bins);
+    t0 = tbb::tick_count::now();
+    parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+                 [&](const tbb::blocked_range<size_t>& r)
+                 {
+                     for(size_t i = r.begin(); i < r.end(); ++i)
+                     {
+                         hist_p6[image[i]].count++;
+                     }
+                 }
+    );
+    t1 = tbb::tick_count::now();
+    double pad_parallel = (t1 - t0).seconds();
+
+    //cache padding 2
+    std::vector<bin2, tbb::cache_aligned_allocator<bin2>> hist_p7(num_bins);
+    t0 = tbb::tick_count::now();
+    parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+                 [&](const tbb::blocked_range<size_t>& r)
+                 {
+                     for(size_t i = r.begin(); i < r.end(); ++i)
+                     {
+                         hist_p7[image[i]].count++;
+                     }
+                 }
+    );
+    t1 = tbb::tick_count::now();
+    double pad2_parallel = (t1 - t0).seconds();
+
     std::cout << "Serial:       "   << t_serial   << std::endl;
     std::cout << "Parallel:     " << t_parallel << std::endl;
     std::cout << "Atomic:       " << a_parallel << std::endl;
     std::cout << "ETC:          " << e_parallel << std::endl;
     std::cout << "combinable:   " << c_parallel << std::endl;
     std::cout << "reduce:       " << r_parallel << std::endl;
+    std::cout << "----cache-----" << std::endl;
+    std::cout << "padding1:     " << pad_parallel << std::endl;
+    std::cout << "padding2:     " << pad2_parallel << std::endl;
     // std::cout << "Speed-up: " << t_serial/t_parallel << std::endl;
 
     if (hist != hist_p)
